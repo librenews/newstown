@@ -6,6 +6,7 @@ from db.connection import db
 from publishing.scheduler import scheduler
 from api.publishing import router as publishing_router
 from api.governance import router as governance_router
+from api.dashboard import router as dashboard_router
 from config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,6 +57,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(publishing_router)
 app.include_router(governance_router)
 

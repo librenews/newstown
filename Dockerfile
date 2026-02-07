@@ -26,9 +26,10 @@ RUN python -m spacy download en_core_web_sm --no-cache-dir || echo "SpaCy model 
 # Final stage
 FROM python:3.12-slim
 
-# Install runtime dependencies
+# Install runtime dependencies including supervisor
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder
@@ -37,20 +38,18 @@ COPY --from=builder /opt/venv /opt/venv
 # Create app user
 RUN useradd -m -u 1000 newsroom && \
     mkdir -p /app && \
-    chown -R newsroom:newsroom /app
+    mkdir -p /var/log/supervisor && \
+    chown -R newsroom:newsroom /app /var/log/supervisor
 
 # Set working directory
 WORKDIR /app
 
-# Copy application code
+# Copy application code and supervisor config
 COPY --chown=newsroom:newsroom . .
-
-# Switch to app user
-USER newsroom
 
 # Activate virtual environment
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
-# Run the application
-CMD ["python", "main.py"]
+# Run both newsroom and API via supervisor
+CMD ["supervisord", "-c", "supervisord.conf"]

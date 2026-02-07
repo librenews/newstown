@@ -47,21 +47,33 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       
       # Agent Configuration
-      MAX_CONCURRENT_AGENTS: ${MAX_CONCURRENT_AGENTS:-10}
       TASK_POLL_INTERVAL_SECONDS: ${TASK_POLL_INTERVAL_SECONDS:-5}
       AGENT_HEARTBEAT_INTERVAL_SECONDS: ${AGENT_HEARTBEAT_INTERVAL_SECONDS:-30}
       
       # Story Detection
       MIN_NEWSWORTHINESS_SCORE: ${MIN_NEWSWORTHINESS_SCORE:-0.6}
       MAX_STORIES_PER_DAY: ${MAX_STORIES_PER_DAY:-20}
+      MAX_CONCURRENT_AGENTS: ${MAX_CONCURRENT_AGENTS:-10}
+      
+      # Publishing (from .env)
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-news@newstown.local}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-News Town}
+      
+      # API Configuration
+      API_HOST: ${API_HOST:-0.0.0.0}
+      API_PORT: ${API_PORT:-8000}
       
       # Governance
       MIN_SOURCES_REQUIRED: ${MIN_SOURCES_REQUIRED:-2}
       REQUIRE_FACT_VERIFICATION: ${REQUIRE_FACT_VERIFICATION:-true}
       AUTO_PUBLISH_ENABLED: ${AUTO_PUBLISH_ENABLED:-false}
+    ports:
+      - "8000:8000"  # API server
     volumes:
-      # Optional: mount output directory for articles
-      - ./output:/app/output
+      # Optional:  Mount local code for development
+      # - ./:/app
+      - story_data:/app/data
     networks:
       - newstown-network
     restart: unless-stopped
@@ -69,13 +81,14 @@ services:
       sh -c "
         echo 'Waiting for database...' &&
         python -m db.migrate &&
-        echo 'Starting News Town...' &&
-        python main.py
+        echo 'Starting News Town (newsroom + API)...' &&
+        supervisord -c supervisord.conf
       "
 
 volumes:
   postgres_data:
     driver: local
+  story_data:
 
 networks:
   newstown-network:
