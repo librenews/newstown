@@ -1,9 +1,6 @@
-"""Search abstraction layer - supports multiple search providers."""
-from abc import ABC, abstractmethod
-from typing import Optional
+"""Search abstraction layer - supports multiple search providers with fallback."""
+from typing import List
 from dataclasses import dataclass
-import aiohttp
-from config.settings import settings
 from config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -18,126 +15,46 @@ class SearchResult:
     source: str  # domain name
 
 
-class SearchProvider(ABC):
-    """Base class for search providers."""
-
-    @abstractmethod
-    async def search(self, query: str, num_results: int = 5) -> list[SearchResult]:
-        """Search for a query and return results."""
-        pass
+# Import the fallback search system
+from ingestion.search_fallback import get_search as get_fallback_search, SearchResult as FallbackSearchResult
 
 
-class BraveSearchProvider(SearchProvider):
-    """Brave Search API provider."""
-
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.base_url = "https://api.search.brave.com/res/v1/web/search"
-
-    async def search(self, query: str, num_results: int = 5) -> list[SearchResult]:
-        """Search using Brave Search API."""
-        if not self.api_key:
-            logger.warning("Brave API key not configured, skipping search")
-            return []
-
-        headers = {
-            "Accept": "application/json",
-            "X-Subscription-Token": self.api_key,
-        }
-
-        params = {
-            "q": query,
-            "count": min(num_results, 20),  # Brave max is 20
-        }
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    self.base_url,
-                    headers=headers,
-                    params=params,
-                ) as response:
-                    if response.status != 200:
-                        logger.error(
-                            "Brave search failed",
-                            status=response.status,
-                            error=await response.text(),
-                        )
-                        return []
-
-                    data = await response.json()
-
-                    results = []
-                    for item in data.get("web", {}).get("results", []):
-                        results.append(
-                            SearchResult(
-                                title=item.get("title", ""),
-                                url=item.get("url", ""),
-                                snippet=item.get("description", ""),
-                                source=item.get("url", "").split("/")[2]
-                                if "/" in item.get("url", "")
-                                else "",
-                            )
-                        )
-
-                    logger.info(
-                        "Search completed",
-                        query=query,
-                        result_count=len(results),
-                    )
-
-                    return results
-
-        except Exception as e:
-            logger.error("Search request failed", query=query, error=str(e))
-            return []
-
-
-class SearchService:
+async def search(query: str, num_results: int = 5) -> List[SearchResult]:
     """
-    Search service that can use multiple providers.
+    Search using multi-provider fallback system.
     
-    Makes it easy to add additional search engines later.
+    Automatically tries Brave, then DuckDuckGo if rate limited.
     """
-
-    def __init__(self):
-        self.providers: dict[str, SearchProvider] = {}
-
-        # Register Brave Search if API key is available
-        if settings.brave_api_key:
-            self.providers["brave"] = BraveSearchProvider(settings.brave_api_key)
-            logger.info("Brave Search provider registered")
-
-        # Future: Add other providers here
-        # if settings.serp_api_key:
-        #     self.providers["serp"] = SerpApiProvider(settings.serp_api_key)
-
-    async def search(
-        self,
-        query: str,
-        num_results: int = 5,
-        provider: Optional[str] = None,
-    ) -> list[SearchResult]:
-        """
-        Search using specified provider or first available.
+    try:
+        fallback_search = get_fallback_search()
+        results = await fallback_search.search(query, max_results=num_results)
         
-        Args:
-            query: Search query
-            num_results: Number of results to return
-            provider: Specific provider name, or None for first available
-        """
-        if not self.providers:
-            logger.warning("No search providers configured")
-            return []
+        # Convert to our SearchResult format
+        converted = []
+        for r in results:
+            source_domain = r.url.split("/")[2] if "/" in r.url else ""
+            converted.append(SearchResult(
+                title=r.title,
+                url=r.url,
+                snippet=r.snippet,
+                source=source_domain
+            ))
+        
+        return converted
+        
+    except Exception as e:
+        logger.error("Search failed after all fallbacks", query=query, error=str(e))
+        return []
 
-        # Use specific provider or first available
-        if provider and provider in self.providers:
-            search_provider = self.providers[provider]
-        else:
-            search_provider = next(iter(self.providers.values()))
 
-        return await search_provider.search(query, num_results)
+# For backwards compatibility
+class SearchService:
+    """Legacy search service - now uses fallback system."""
+    
+    async def search(self, query: str, num_results: int = 5, provider=None) -> List[SearchResult]:
+        """Search using fallback system."""
+        return await search(query, num_results)
 
 
-# Global search service instance
+# Global instance for backwards compatibility
 search_service = SearchService()
