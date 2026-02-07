@@ -71,8 +71,8 @@ services:
     ports:
       - "8000:8000"  # API server
     volumes:
-      # Optional:  Mount local code for development
-      # - ./:/app
+      # Mount local code for development
+      - ./:/app
       - story_data:/app/data
     networks:
       - newstown-network

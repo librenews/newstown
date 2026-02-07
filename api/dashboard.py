@@ -55,10 +55,10 @@ async def get_dashboard_stats() -> Dict[str, Any]:
     # Agent activity (from story events)
     agent_activity = await db.fetch(
         """
-        SELECT agent_id, event_type, occurred_at
+        SELECT agent_id, event_type, created_at as occurred_at
         FROM story_events
-        WHERE occurred_at > NOW() - INTERVAL '1 hour'
-        ORDER BY occurred_at DESC
+        WHERE created_at > NOW() - INTERVAL '1 hour'
+        ORDER BY created_at DESC
         LIMIT 50
         """
     )
