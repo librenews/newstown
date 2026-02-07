@@ -1,19 +1,24 @@
-"""Configuration management for News Town."""
-from pydantic_settings import BaseSettings, SettingsConfigDict
+"""Configuration settings for News Town."""
+from pydantic_settings import BaseSettings
 from typing import Literal
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment."""
-
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
-    # Database
-    database_url: str = "postgresql://localhost/newstown"
-
-    # AI Providers
+    """Application settings loaded from environment variables."""
+    
+    # Environment
+    environment: Literal["development", "production", "test"] = "development"
+    
+    # API Keys
     openai_api_key: str
     anthropic_api_key: str
+    
+    # LLM Configuration
+    openai_model: str = "gpt-4-turbo-preview"
+    claude_model: str = "claude-3-5-sonnet-20240620"  # Latest stable Claude 3.5 Sonnet
+    
+    # Database
+    database_url: str = "postgresql://newsroom:newsroom@localhost:5432/newstown"
 
     # Search Providers
     brave_api_key: str = ""  # Optional
