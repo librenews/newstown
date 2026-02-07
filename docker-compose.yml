@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database with pgvector extension
+  db:
+    image: ankane/pgvector:latest
+    container_name: newstown-db
+    environment:
+      POSTGRES_DB: newstown
+      POSTGRES_USER: newstown
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-newstown_dev}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U newstown"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - newstown-network
+
+  # News Town application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: newstown-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://newstown:${DB_PASSWORD:-newstown_dev}@db:5432/newstown
+      
+      # AI Providers (from .env)
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      
+      # Search Providers
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      
+      # System
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      
+      # Agent Configuration
+      MAX_CONCURRENT_AGENTS: ${MAX_CONCURRENT_AGENTS:-10}
+      TASK_POLL_INTERVAL_SECONDS: ${TASK_POLL_INTERVAL_SECONDS:-5}
+      AGENT_HEARTBEAT_INTERVAL_SECONDS: ${AGENT_HEARTBEAT_INTERVAL_SECONDS:-30}
+      
+      # Story Detection
+      MIN_NEWSWORTHINESS_SCORE: ${MIN_NEWSWORTHINESS_SCORE:-0.6}
+      MAX_STORIES_PER_DAY: ${MAX_STORIES_PER_DAY:-20}
+      
+      # Governance
+      MIN_SOURCES_REQUIRED: ${MIN_SOURCES_REQUIRED:-2}
+      REQUIRE_FACT_VERIFICATION: ${REQUIRE_FACT_VERIFICATION:-true}
+      AUTO_PUBLISH_ENABLED: ${AUTO_PUBLISH_ENABLED:-false}
+    volumes:
+      # Optional: mount output directory for articles
+      - ./output:/app/output
+    networks:
+      - newstown-network
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        python -m db.migrate &&
+        echo 'Starting News Town...' &&
+        python main.py
+      "
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  newstown-network:
+    driver: bridge

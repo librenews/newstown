@@ -1,0 +1,45 @@
+# Core
+asyncpg==0.29.0
+pydantic==2.6.0
+pydantic-settings==2.2.1
+structlog==24.1.0
+python-dotenv==1.0.1
+
+# AI/LLM
+openai==1.12.0
+anthropic==0.40.0
+tiktoken==0.6.0
+
+# Database
+pgvector==0.2.5
+alembic==1.13.1
+sqlalchemy==2.0.27
+
+# Web (optional - for dashboard)
+fastapi==0.109.2
+uvicorn==0.27.1
+
+# Utilities
+aiohttp==3.9.3
+feedparser==6.0.11
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# NLP & Search
+spacy==3.8.2
+# Note: spaCy model will be downloaded in Dockerfile or via setup
+# Do NOT add en_core_web_sm to requirements.txt
+
+# Development
+pytest==8.0.2
+pytest-asyncio==0.23.5
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+black==24.2.0
+ruff==0.2.2
+mypy==1.8.0
+
+# Phase 3: Publishing
+feedgen==1.0.0
+sendgrid==6.11.0
+jinja2==3.1.2
