@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # LLM Configuration
     openai_model: str = "gpt-4-turbo-preview"
-    claude_model: str = "claude-3-5-sonnet-20240620"  # Latest stable Claude 3.5 Sonnet
+    claude_model: str = "claude-3-haiku-20240307"  # Use Haiku as it has broader availability
     
     # Database
     database_url: str = "postgresql://newsroom:newsroom@localhost:5432/newstown"
@@ -30,7 +30,6 @@ class Settings(BaseSettings):
 
     # System
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    environment: Literal["development", "production", "test"] = "development"
 
     # Agent Configuration
     max_concurrent_agents: int = 10
@@ -45,6 +44,11 @@ class Settings(BaseSettings):
     min_sources_required: int = 2
     require_fact_verification: bool = True
     auto_publish_enabled: bool = False
+
+    # Phase 4: Local AI & Embeddings
+    embedding_model: str = "BAAI/bge-small-en-v1.5"  # "BAAI/bge-large-en-v1.5" for prod
+    local_llm_base_url: str = ""  # e.g., "http://localhost:11434/v1" for Ollama
+    local_llm_model: str = "llama3"  # Model name to send to local server
 
 
 # Global settings instance

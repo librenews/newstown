@@ -22,6 +22,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Skip download if it fails - the app will handle missing model gracefully
 RUN python -m spacy download en_core_web_sm --no-cache-dir || echo "SpaCy model download skipped - will be downloaded at runtime if needed"
 
+# Pre-download embedding models (Phase 4)
+COPY scripts/download_models.py /app/scripts/
+RUN python /app/scripts/download_models.py
+
+
 
 # Final stage
 FROM python:3.12-slim

@@ -26,8 +26,75 @@ class Article(BaseModel):
     updated_at: datetime
 
 
+class ArticleReview(BaseModel):
+    """Editor review of an article."""
+    id: int
+    article_id: UUID
+    editor_agent_id: UUID
+    score: float
+    feedback: str
+    decision: str
+    meta: dict[str, Any] = {}
+    created_at: datetime
+
+
 class ArticleStore:
     """Manage published articles."""
+    
+    async def record_review(
+        self,
+        article_id: UUID,
+        editor_agent_id: UUID,
+        score: float,
+        feedback: str,
+        decision: str,
+        meta: Optional[dict] = None,
+    ) -> int:
+        """Record an editor review."""
+        review_id = await db.fetchval(
+            """
+            INSERT INTO article_reviews (
+                article_id, editor_agent_id, score, feedback, decision, meta
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+            """,
+            article_id,
+            editor_agent_id,
+            score,
+            feedback,
+            decision,
+            json.dumps(meta or {}),
+        )
+        
+        logger.info(
+            "Article review recorded",
+            article_id=str(article_id),
+            decision=decision,
+            score=score,
+        )
+        
+        return review_id
+
+    async def get_article_reviews(self, article_id: UUID) -> list[ArticleReview]:
+        """Get reviews for an article."""
+        rows = await db.fetch(
+            """
+            SELECT * FROM article_reviews
+            WHERE article_id = $1
+            ORDER BY created_at DESC
+            """,
+            article_id,
+        )
+        
+        reviews = []
+        for row in rows:
+            row_dict = dict(row)
+            if isinstance(row_dict['meta'], str):
+                row_dict['meta'] = json.loads(row_dict['meta'])
+            reviews.append(ArticleReview(**row_dict))
+            
+        return reviews
     
     async def create_article(
         self,

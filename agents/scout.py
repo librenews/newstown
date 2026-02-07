@@ -54,6 +54,11 @@ class ScoutAgent(BaseAgent):
         """Scan a single RSS feed for newsworthy content."""
         logger.info("Scanning feed", feed_url=feed_url)
         
+        # Import services here to avoid circular imports if any
+        from ingestion.embeddings import embedding_service
+        from ingestion import entity_extractor
+        from db.memory import memory_store
+        
         try:
             feed = feedparser.parse(feed_url)
             
@@ -63,8 +68,36 @@ class ScoutAgent(BaseAgent):
                 if score < 0.6:
                     continue
                 
-                # Create new story
-                story_id = uuid4()
+                title = entry.get("title", "")
+                summary = entry.get("summary", "")[:500]
+                content_for_embedding = f"{title}. {summary}"
+                
+                # Check for duplicates using embeddings
+                try:
+                    embedding = embedding_service.embed(content_for_embedding)
+                    similar_stories = await memory_store.find_similar_stories(
+                        embedding, threshold=0.85, limit=1
+                    )
+                except Exception as e:
+                    logger.error("Embedding generation failed", error=str(e))
+                    embedding = []
+                    similar_stories = []
+                
+                if similar_stories:
+                    # Duplicate found - link to existing story
+                    existing_story = similar_stories[0]
+                    story_id = existing_story["story_id"]
+                    is_duplicate = True
+                    logger.info(
+                        "Duplicate story detected",
+                        new_title=title,
+                        existing_story_id=str(story_id),
+                        similarity=existing_story["similarity"]
+                    )
+                else:
+                    # New story
+                    story_id = uuid4()
+                    is_duplicate = False
                 
                 # Log detection event
                 await self.log_event(
@@ -72,20 +105,49 @@ class ScoutAgent(BaseAgent):
                     "story.detected",
                     {
                         "source": feed_url,
-                        "title": entry.get("title"),
+                        "title": title,
                         "url": entry.get("link"),
-                        "summary": entry.get("summary", "")[:500],
+                        "summary": summary,
                         "score": score,
                         "published": entry.get("published"),
+                        "is_duplicate": is_duplicate,
                     },
                 )
                 
-                logger.info(
-                    "Story detected",
-                    story_id=str(story_id),
-                    title=entry.get("title"),
-                    score=score,
-                )
+                # If new, save to memory for future deduplication
+                if not is_duplicate and embedding:
+                    # Extract entities for metadata
+                    entities_meta = {}
+                    if entity_extractor:
+                        try:
+                            extracted = entity_extractor.extract(f"{title}. {summary}")
+                            entities_meta = {
+                                "people": [e.text for e in extracted if e.label_ == "PERSON"],
+                                "orgs": [e.text for e in extracted if e.label_ == "ORG"],
+                                "gpe": [e.text for e in extracted if e.label_ == "GPE"],
+                            }
+                        except Exception as e:
+                            logger.warning("Entity extraction failed", error=str(e))
+
+                    await memory_store.add(
+                        story_id=story_id,
+                        content=content_for_embedding,
+                        embedding=embedding,
+                        memory_type="summary",
+                        metadata={
+                            "source": feed_url, 
+                            "url": entry.get("link"),
+                            "entities": entities_meta
+                        }
+                    )
+                
+                if not is_duplicate:
+                    logger.info(
+                        "New story detected",
+                        story_id=str(story_id),
+                        title=title,
+                        score=score,
+                    )
                 
         except Exception as e:
             logger.error("Feed scan failed", feed_url=feed_url, error=str(e))

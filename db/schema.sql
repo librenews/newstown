@@ -166,6 +166,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Helper function to claim tasks atomically
+DROP FUNCTION IF EXISTS claim_task(UUID, TEXT) CASCADE;
+
 -- Function to claim a task (atomic)
 CREATE OR REPLACE FUNCTION claim_task(
   p_agent_id UUID,
@@ -175,6 +178,7 @@ RETURNS TABLE (
   task_id UUID,
   story_id UUID,
   stage TEXT,
+  priority INTEGER,
   input JSONB
 ) AS $$
 DECLARE
@@ -204,7 +208,7 @@ BEGIN
     LIMIT 1
   ) subquery
   WHERE st.id = subquery.id
-  RETURNING st.id, st.story_id, st.stage, st.input
+  RETURNING st.id, st.story_id, st.stage, st.priority, st.input
   INTO claimed_task;
   
   IF claimed_task IS NOT NULL THEN
@@ -212,6 +216,7 @@ BEGIN
       claimed_task.id,
       claimed_task.story_id,
       claimed_task.stage,
+      claimed_task.priority,
       claimed_task.input;
   END IF;
 END;
@@ -377,4 +382,31 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp DESC);
+
+
+-- ============================================================================
+-- PHASE 4.1: Editor Agent & Quality Control
+-- ============================================================================
+
+-- Article Reviews: record of editorial review pass
+CREATE TABLE IF NOT EXISTS article_reviews (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    story_id UUID NOT NULL,
+    article_id UUID REFERENCES articles(id) ON DELETE CASCADE,
+    editor_agent_id UUID NOT NULL,
+    score FLOAT NOT NULL,
+    verification_score FLOAT,
+    style_score FLOAT,
+    feedback TEXT,
+    decision VARCHAR(20) NOT NULL, -- 'APPROVE', 'REJECT'
+    meta JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_story ON article_reviews(story_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_article ON article_reviews(article_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_decision ON article_reviews(decision);
+CREATE INDEX IF NOT EXISTS idx_reviews_created ON article_reviews(created_at DESC);
+
+COMMENT ON TABLE article_reviews IS 'Record of editorial review passes and quality scores';
 

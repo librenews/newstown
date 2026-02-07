@@ -1,7 +1,7 @@
 # Core
 asyncpg==0.29.0
-pydantic==2.6.0
-pydantic-settings==2.2.1
+pydantic==2.8.2
+pydantic-settings==2.4.0
 structlog==24.1.0
 python-dotenv==1.0.1
 
@@ -30,6 +30,11 @@ spacy==3.8.2
 # Note: spaCy model will be downloaded in Dockerfile or via setup
 # Do NOT add en_core_web_sm to requirements.txt
 
+# Phase 4: Local AI
+sentence-transformers==2.3.1
+torch==2.2.0
+numpy==1.26.4
+
 # Development
 pytest==8.0.2
 pytest-asyncio==0.23.5
@@ -44,3 +49,4 @@ feedgen==1.0.0
 sendgrid==6.11.0
 jinja2==3.1.2
 duckduckgo-search==6.3.5
+markdown==3.5.2

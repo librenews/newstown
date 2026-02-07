@@ -96,6 +96,7 @@ class TaskQueue:
             story_id=row["story_id"],
             stage=TaskStage(row["stage"]),
             status=TaskStatus.ACTIVE,
+            priority=row["priority"],
             assigned_agent=agent_id,
             input=json.loads(row["input"]) if isinstance(row["input"], str) else row["input"],
         )

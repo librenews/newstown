@@ -1,9 +1,11 @@
 """Chief agent - central orchestrator for News Town."""
 import asyncio
+import json
 from typing import Any
 from uuid import UUID
 from agents.base import BaseAgent, AgentRole
 from db import db, event_store, task_queue, Task, TaskStage
+from db.articles import article_store
 from config.logging import get_logger
 from config.settings import settings
 
@@ -105,6 +107,14 @@ class Chief(BaseAgent):
 
     async def advance_stories(self) -> int:
         """Move stories through pipeline stages."""
+        count = 0
+        count += await self.assign_research_to_draft()
+        count += await self.assign_draft_to_review()
+        count += await self.process_reviews()
+        return count
+
+    async def assign_research_to_draft(self) -> int:
+        """Create draft tasks for stories with completed research."""
         # Find stories with completed research but no draft task
         rows = await db.fetch("""
             WITH research_completed AS (
@@ -155,7 +165,180 @@ class Chief(BaseAgent):
             
             logger.info("Draft task created", story_id=str(story_id))
             count += 1
+            
+        return count
+
+    async def assign_draft_to_review(self) -> int:
+        """Create review tasks for stories with completed drafts/revisions."""
+        # Find stories with completed draft OR completed revision, but NO active review
+        rows = await db.fetch("""
+            WITH latest_drafts AS (
+                SELECT DISTINCT story_id, MAX(created_at) as last_draft_time
+                FROM story_events
+                WHERE event_type IN ('draft.completed', 'revision.completed')
+                GROUP BY story_id
+            ),
+            active_reviews AS (
+                SELECT DISTINCT story_id
+                FROM story_tasks
+                WHERE stage = 'review' AND status IN ('pending', 'active')
+            ),
+            completed_reviews AS (
+                SELECT story_id, MAX(created_at) as last_review_time
+                FROM story_tasks
+                WHERE stage = 'review' AND status = 'completed'
+                GROUP BY story_id
+            )
+            SELECT d.story_id
+            FROM latest_drafts d
+            LEFT JOIN active_reviews a ON d.story_id = a.story_id
+            LEFT JOIN completed_reviews c ON d.story_id = c.story_id
+            WHERE a.story_id IS NULL
+              AND (c.story_id IS NULL OR d.last_draft_time > c.last_review_time)
+            LIMIT 10
+        """)
         
+        count = 0
+        for row in rows:
+            story_id = row["story_id"]
+            
+            # Get latest draft content
+            events = await event_store.get_story_events(story_id)
+            draft_event = next(
+                (e for e in reversed(events) if e.event_type in ["draft.completed", "revision.completed"]),
+                None
+            )
+            
+            # Also get task output just in case (the event usually contains metadata, task output contains content)
+            # Wait, Reporter.draft returns the content in the output.
+            # And BaseAgent logs task.completed.draft with output.
+            # So we should look for task.completed.draft or task.completed.edit (for revisions)
+            
+            task_event = next(
+                (e for e in reversed(events) if e.event_type in ["task.completed.draft", "task.completed.edit"]),
+                None
+            )
+            
+            if not task_event:
+                continue
+            
+            draft_content = task_event.data.get("output", {})
+            
+            # Create review task
+            await task_queue.create(
+                story_id=story_id,
+                stage=TaskStage.REVIEW,
+                priority=6,
+                input_data={"draft": draft_content},
+            )
+            
+            logger.info("Review task created", story_id=str(story_id))
+            count += 1
+            
+        return count
+
+    async def process_reviews(self) -> int:
+        """Process completed reviews (Publish or Request Revision)."""
+        # Find completed reviews that haven't been acted upon
+        rows = await db.fetch("""
+            WITH completed_reviews AS (
+                SELECT *
+                FROM story_tasks
+                WHERE stage = 'review' AND status = 'completed'
+                  AND completed_at > NOW() - INTERVAL '1 hour'
+            )
+            SELECT * FROM completed_reviews
+            LIMIT 10
+        """)
+        
+        count = 0
+        for row in rows:
+            task_id = row["id"]
+            story_id = row["story_id"]
+            output = json.loads(row["output"]) if isinstance(row["output"], str) else row["output"]
+            task_input = json.loads(row["input"]) if isinstance(row["input"], str) else row["input"]
+            
+            decision = output.get("decision")
+            
+            if decision == "APPROVE":
+                # Check if publish task already exists
+                publish_exists = await db.fetchval(
+                    "SELECT 1 FROM story_tasks WHERE story_id = $1 AND stage = 'publish'",
+                    story_id
+                )
+                if not publish_exists:
+                    # Create the article in the database
+                    draft = task_input.get("draft", {})
+                    # For a draft, the content is in 'article' key usually?
+                    # Reporter.draft returns {"article": "...", "headline": "...", ...}
+                    # But wait, Editor.review_article expects {"draft": {"article": ...}}
+                    # Yes, assign_draft_to_review puts the whole draft output into "draft" key.
+                    # So draft = {"article": ..., "headline": ...} happens above.
+                    
+                    if not draft:
+                        logger.error("Approved review missing draft content", task_id=str(task_id))
+                        continue
+
+                    # Create article
+                    # Note: We don't have all metadata here easily (entities, sources are in research task)
+                    # But they might be in draft output if Reporter put them there?
+                    # Reporter.draft returns limited fields.
+                    # Ideally Reporter should pass through sources/entities.
+                    # But for now, we'll create with what we have.
+                    
+                    article_body = draft.get("article", "")
+                    headline = draft.get("headline", "Untitled")
+                    
+                    try:
+                        article_id = await article_store.create_article(
+                            story_id=story_id,
+                            headline=headline,
+                            body=article_body,
+                            summary=None, # summary could be generated?
+                            byline="News Town Reporter",
+                            # We lost sources/entities in this simplified flow...
+                            # TODO: Phase 4.x - Pass metadata through
+                        )
+                        
+                        # Create publish task
+                        await task_queue.create(
+                            story_id=story_id,
+                            stage=TaskStage.PUBLISH,
+                            priority=8,
+                            input_data={
+                                "article_id": str(article_id),
+                                "channels": ["rss"] # Default to RSS
+                            }
+                        )
+                        logger.info("Publish task created", story_id=str(story_id))
+                        count += 1
+                        
+                    except Exception as e:
+                        logger.error("Failed to create article for publishing", error=str(e))
+            
+            elif decision == "REJECT":
+                 # Check if the latest task is this review
+                 latest_task = await db.fetchrow(
+                     "SELECT * FROM story_tasks WHERE story_id = $1 ORDER BY created_at DESC LIMIT 1",
+                     story_id
+                 )
+                 
+                 if latest_task and latest_task["id"] == task_id:
+                     # This review is the latest thing. We need to create revision task.
+                     draft_content = task_input.get("draft", {})
+                     
+                     await task_queue.create(
+                        story_id=story_id,
+                        stage=TaskStage.EDIT,
+                        priority=7,
+                        input_data={
+                            "draft": draft_content,
+                            "feedback": output.get("feedback", "No feedback provided."),
+                        }
+                     )
+                     logger.info("Revision (Edit) task created", story_id=str(story_id))
+                     count += 1
+                     
         return count
 
     async def recover_stalled_tasks(self) -> int:

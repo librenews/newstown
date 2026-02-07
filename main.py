@@ -8,6 +8,7 @@ from db.migrate import run_migrations
 from chief import Chief
 from agents.scout import ScoutAgent
 from agents.reporter import ReporterAgent
+from agents.editor import EditorAgent
 
 logger = get_logger(__name__)
 
@@ -50,6 +51,10 @@ class NewsTown:
         for _ in range(2):
             reporter = ReporterAgent()
             self.agents.append(reporter)
+
+        # Create Editor agent
+        editor = EditorAgent()
+        self.agents.append(editor)
         
         # Start all agents
         logger.info(f"Starting {len(self.agents)} agents")

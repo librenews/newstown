@@ -8,13 +8,13 @@ def test_entity_model():
     """Test entity model creation."""
     entity = Entity(
         text="Apple Inc.",
-        label="ORG",
+        label_="ORG",
         start=0,
         end=10,
     )
     
     assert entity.text == "Apple Inc."
-    assert entity.label == "ORG"
+    assert entity.label_ == "ORG"
     assert entity.start == 0
     assert entity.end == 10
 

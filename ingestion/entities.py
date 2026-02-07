@@ -20,7 +20,7 @@ except (ImportError, TypeError) as e:
 class Entity:
     """Extracted entity."""
     text: str
-    label: str  # PERSON, ORG, GPE, etc.
+    label_: str  # PERSON, ORG, GPE, etc.
     start: int
     end: int
 
@@ -85,7 +85,7 @@ class EntityExtractor:
                     entities.append(
                         Entity(
                             text=ent.text,
-                            label=ent.label_,
+                            label_=ent.label_,
                             start=ent.start_char,
                             end=ent.end_char,
                         )
