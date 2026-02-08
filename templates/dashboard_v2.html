@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>News Town | Oversight Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --bg: #0f172a;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --border: rgba(255, 255, 255, 0.1);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --purple: #8b5cf6;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      background-image: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent),
+        radial-gradient(circle at bottom left, rgba(139, 92, 246, 0.15), transparent);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2.5rem;
+      backdrop-filter: blur(10px);
+      padding: 1.5rem;
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+    }
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.025em;
+    }
+
+    .logo span {
+      color: var(--text-main);
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.75rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 1.5rem;
+      border-radius: 1rem;
+      backdrop-filter: blur(10px);
+      transition: transform 0.2s;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+    }
+
+    .stat-label {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .content-section {
+      display: none;
+    }
+
+    .content-section.active {
+      display: block;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th {
+      padding: 1.25rem;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 1.25rem;
+      font-size: 0.9375rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 2rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge-success {
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .badge-warning {
+      background: rgba(245, 158, 11, 0.1);
+      color: var(--warning);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    .badge-danger {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .badge-info {
+      background: rgba(99, 102, 241, 0.1);
+      color: var(--primary);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+    }
+
+    .btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.75rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(5px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: #1e293b;
+      padding: 2rem;
+      border-radius: 1.5rem;
+      width: 500px;
+      max-width: 90%;
+      border: 1px solid var(--border);
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .form-input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      padding: 0.75rem;
+      border-radius: 0.75rem;
+      color: white;
+      font-family: inherit;
+    }
+
+    .form-input:focus {
+      border-color: var(--primary);
+      outline: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">NEWS<span>TOWN</span></div>
+      <div id="connection-status" class="badge badge-success">Live Connection</div>
+    </header>
+
+    <div class="nav-tabs">
+      <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
+      <button class="tab-btn" onclick="showTab('stories')">Stories</button>
+      <button class="tab-btn" onclick="showTab('prompts')">Human Prompts</button>
+      <button class="tab-btn" onclick="showTab('sources')">Sources</button>
+      <button class="tab-btn" onclick="showTab('agents')">Agents</button>
+    </div>
+
+    <!-- Overview Tab -->
+    <section id="overview" class="content-section active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Articles</div>
+          <div class="stat-value" id="stat-total-articles">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Discovery Score</div>
+          <div class="stat-value" id="stat-discovery-score">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Pipelines</div>
+          <div class="stat-value" id="stat-active-pipelines">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Agent Uptime</div>
+          <div class="stat-value">99.9%</div>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom: 1rem;">Recent Articles</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Headline</th>
+              <th>Byline</th>
+              <th>Published</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody id="articles-table">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Stories Tab -->
+    <section id="stories" class="content-section">
+      <h3 style="margin-bottom: 1rem;">Active Pipelines</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Story ID</th>
+              <th>Title</th>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Last Activity</th>
+            </tr>
+          </thead>
+          <tbody id="stories-table">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Prompts Tab -->
+    <section id="prompts" class="content-section">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3>Human Prompts</h3>
+        <button class="btn" onclick="openPromptModal()">+ New Prompt</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Prompt</th>
+              <th>Status</th>
+              <th>Story</th>
+            </tr>
+          </thead>
+          <tbody id="prompts-table">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Sources Tab -->
+    <section id="sources" class="content-section">
+      <h3>Story Sources</h3>
+      <p style="color: var(--text-muted); margin-bottom: 1rem;">List of ingested external sources per story.</p>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Title / URL</th>
+              <th>Story</th>
+              <th>Processed</th>
+            </tr>
+          </thead>
+          <tbody id="sources-table">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Agents Tab (Audit Log + Activity) -->
+    <section id="agents" class="content-section">
+      <h3 style="margin-bottom: 1rem;">System Activity</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Event</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody id="agent-activity-table">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modals -->
+  <div id="prompt-modal" class="modal">
+    <div class="modal-content">
+      <h3 style="margin-bottom: 1.5rem;">New Human Prompt</h3>
+      <div class="form-group">
+        <label class="form-label">Story ID (UUID)</label>
+        <input type="text" id="prompt-story-id" class="form-input" placeholder="00000000-0000-0000-0000-000000000000">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Your Question</label>
+        <textarea id="prompt-text" class="form-input" rows="4"
+          placeholder="What should the agents research?"></textarea>
+      </div>
+      <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+        <button class="btn" style="background: var(--card-bg)" onclick="closePromptModal()">Cancel</button>
+        <button class="btn" onclick="submitPrompt()">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showTab(tabId) {
+      document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      event.target.classList.add('active');
+      refreshData();
+    }
+
+    async function refreshData() {
+      try {
+        const statsResp = await fetch('/dashboard/api/stats');
+        const statsData = await statsResp.json();
+
+        // Update stats
+        document.getElementById('stat-total-articles').innerText = statsData.stats.total_articles;
+        document.getElementById('stat-active-pipelines').innerText = statsData.stats.active_pipelines;
+        document.getElementById('stat-discovery-score').innerText = statsData.stats.total_stories;
+
+        // Update articles
+        const articlesBody = document.getElementById('articles-table');
+        articlesBody.innerHTML = statsData.recent_articles.map(a => `
+                    <tr>
+                        <td style="font-weight: 500;">${a.headline}</td>
+                        <td>${a.byline || 'Unknown'}</td>
+                        <td style="color: var(--text-muted)">${new Date(a.published_at).toLocaleString()}</td>
+                        <td><span class="badge badge-success">85</span></td>
+                    </tr>
+                `).join('');
+
+        // Update activity
+        const activityBody = document.getElementById('agent-activity-table');
+        activityBody.innerHTML = statsData.agent_activity.map(a => `
+                    <tr>
+                        <td style="font-family: monospace; font-size: 0.8rem;">${a.agent_id ? a.agent_id.substring(0, 8) : 'SYSTEM'}</td>
+                        <td><span class="badge badge-info">${a.event_type}</span></td>
+                        <td style="color: var(--text-muted)">${new Date(a.occurred_at).toLocaleTimeString()}</td>
+                    </tr>
+                `).join('');
+
+        // Tab specific updates
+        if (document.getElementById('stories').classList.contains('active')) {
+          const storiesResp = await fetch('/dashboard/api/stories');
+          const stories = await storiesResp.json();
+          document.getElementById('stories-table').innerHTML = stories.map(s => `
+                        <tr>
+                            <td style="font-family: monospace; font-size: 0.8rem;">${s.id.substring(0, 8)}...</td>
+                            <td>${s.title || 'In Research...'}</td>
+                            <td><span class="badge badge-info">${s.current_stage || 'N/A'}</span></td>
+                            <td><span class="badge ${s.status === 'completed' ? 'badge-success' : 'badge-warning'}">${s.status || 'pending'}</span></td>
+                            <td style="color: var(--text-muted)">${new Date(s.last_activity).toLocaleTimeString()}</td>
+                        </tr>
+                    `).join('');
+        }
+
+        if (document.getElementById('prompts').classList.contains('active')) {
+          const promptsResp = await fetch('/dashboard/api/prompts');
+          const prompts = await promptsResp.json();
+          document.getElementById('prompts-table').innerHTML = prompts.map(p => `
+                        <tr>
+                            <td>${p.id}</td>
+                            <td>${p.prompt_text}</td>
+                            <td><span class="badge ${p.answered_at ? 'badge-success' : 'badge-warning'}">${p.answered_at ? 'Answered' : 'Pending'}</span></td>
+                            <td style="font-family: monospace;">${p.story_id.substring(0, 8)}</td>
+                        </tr>
+                    `).join('');
+        }
+
+      } catch (err) {
+        console.error("Refresh failed", err);
+        document.getElementById('connection-status').className = 'badge badge-danger';
+        document.getElementById('connection-status').innerText = 'Offline';
+      }
+    }
+
+    function openPromptModal() { document.getElementById('prompt-modal').style.display = 'flex'; }
+    function closePromptModal() { document.getElementById('prompt-modal').style.display = 'none'; }
+
+    async function submitPrompt() {
+      const sid = document.getElementById('prompt-story-id').value;
+      const text = document.getElementById('prompt-text').value;
+      if (!sid || !text) return alert("Fill all fields");
+
+      await fetch(`/dashboard/api/prompts?story_id=${sid}&prompt_text=${encodeURIComponent(text)}`, { method: 'POST' });
+      closePromptModal();
+      refreshData();
+    }
+
+    // Initialize
+    setInterval(refreshData, 5000);
+    refreshData();
+  </script>
+</body>
+
+</html>

@@ -13,66 +13,65 @@ templates = Jinja2Templates(directory="templates")
 async def get_dashboard_stats() -> Dict[str, Any]:
     """Gather all dashboard statistics."""
     
-    # Article stats
-    total_articles = await db.fetchval("SELECT COUNT(*) FROM articles")
-    articles_today = await db.fetchval(
-        "SELECT COUNT(*) FROM articles WHERE published_at > NOW() - INTERVAL '24 hours'"
-    )
-    
-    # Story stats  
-    total_stories = await db.fetchval("SELECT COUNT(DISTINCT story_id) FROM story_events")
-    
-    # Publication stats
-    total_publications = await db.fetchval("SELECT COUNT(*) FROM publications WHERE status = 'published'")
-    rss_pubs = await db.fetchval("SELECT COUNT(*) FROM publications WHERE channel = 'rss' AND status = 'published'")
-    email_pubs = await db.fetchval("SELECT COUNT(*) FROM publications WHERE channel = 'email' AND status = 'published'")
-    
-    # Governance stats
-    total_rules = await db.fetchval("SELECT COUNT(*) FROM governance_rules")
-    enabled_rules = await db.fetchval("SELECT COUNT(*) FROM governance_rules WHERE enabled = true")
-    pending_approvals = await db.fetchval("SELECT COUNT(*) FROM approval_requests WHERE status = 'pending'")
-    
-    # Recent articles
-    recent_articles = await db.fetch(
-        """
-        SELECT id, headline, byline, published_at
-        FROM articles
-        ORDER BY published_at DESC
-        LIMIT 10
-        """
-    )
-    
-    # Recent activity (from audit log)
-    recent_activity = await db.fetch(
-        """
-        SELECT event_type, severity, timestamp, details
-        FROM audit_log
-        ORDER BY timestamp DESC
-        LIMIT 20
-        """
-    )
-    
-    # Agent activity (from story events)
-    agent_activity = await db.fetch(
-        """
-        SELECT agent_id, event_type, created_at as occurred_at
-        FROM story_events
-        WHERE created_at > NOW() - INTERVAL '1 hour'
-        ORDER BY created_at DESC
-        LIMIT 50
-        """
-    )
+    async with db.acquire() as conn:
+        # Article stats
+        total_articles = await conn.fetchval("SELECT COUNT(*) FROM articles")
+        articles_today = await conn.fetchval(
+            "SELECT COUNT(*) FROM articles WHERE published_at > NOW() - INTERVAL '24 hours'"
+        )
+        
+        # Story stats  
+        total_stories = await conn.fetchval("SELECT COUNT(DISTINCT story_id) FROM story_events")
+        active_pipelines = await conn.fetchval(
+            "SELECT COUNT(DISTINCT story_id) FROM story_tasks WHERE status IN ('pending', 'active')"
+        )
+        
+        # Publication stats
+        total_publications = await conn.fetchval("SELECT COUNT(*) FROM publications WHERE status = 'published'")
+        rss_pubs = await conn.fetchval("SELECT COUNT(*) FROM publications WHERE channel = 'rss' AND status = 'published'")
+        
+        # Governance stats
+        pending_approvals = await conn.fetchval("SELECT COUNT(*) FROM approval_requests WHERE status = 'pending'")
+        
+        # Recent articles
+        recent_articles = await conn.fetch(
+            """
+            SELECT id, headline, byline, published_at
+            FROM articles
+            ORDER BY published_at DESC
+            LIMIT 10
+            """
+        )
+        
+        # Recent activity (from audit log)
+        recent_activity = await conn.fetch(
+            """
+            SELECT event_type, severity, timestamp, details
+            FROM audit_log
+            ORDER BY timestamp DESC
+            LIMIT 20
+            """
+        )
+        
+        # Agent activity
+        agent_activity = await conn.fetch(
+            """
+            SELECT agent_id, event_type, created_at as occurred_at
+            FROM story_events
+            WHERE created_at > NOW() - INTERVAL '1 hour'
+            ORDER BY created_at DESC
+            LIMIT 50
+            """
+        )
     
     return {
         "stats": {
             "total_articles": total_articles or 0,
             "articles_today": articles_today or 0,
             "total_stories": total_stories or 0,
+            "active_pipelines": active_pipelines or 0,
             "total_publications": total_publications or 0,
             "rss_publications": rss_pubs or 0,
-            "email_publications": email_pubs or 0,
-            "total_rules": total_rules or 0,
-            "enabled_rules": enabled_rules or 0,
             "pending_approvals": pending_approvals or 0,
         },
         "recent_articles": [dict(row) for row in recent_articles] if recent_articles else [],
@@ -87,12 +86,62 @@ async def dashboard(request: Request):
     """Render main dashboard page."""
     stats = await get_dashboard_stats()
     return templates.TemplateResponse(
-        "dashboard.html",
+        "dashboard_v2.html",
         {"request": request, **stats}
     )
 
 
 @router.get("/api/stats")
 async def live_stats():
-    """API endpoint for live stats (for auto-refresh)."""
+    """API endpoint for live stats."""
     return await get_dashboard_stats()
+
+
+@router.get("/api/stories")
+async def list_stories(limit: int = 50):
+    """Get active story pipelines."""
+    rows = await db.fetch("""
+        SELECT 
+            s.id,
+            (SELECT data->>'title' FROM story_events WHERE story_id = s.id AND event_type = 'story.detected' LIMIT 1) as title,
+            (SELECT MAX(created_at) FROM story_events WHERE story_id = s.id) as last_activity,
+            (SELECT stage FROM story_tasks WHERE story_id = s.id ORDER BY created_at DESC LIMIT 1) as current_stage,
+            (SELECT status FROM story_tasks WHERE story_id = s.id ORDER BY created_at DESC LIMIT 1) as status
+        FROM (SELECT DISTINCT story_id as id FROM story_events) s
+        ORDER BY last_activity DESC
+        LIMIT $1
+    """, limit)
+    return [dict(row) for row in rows]
+
+
+@router.get("/api/prompts")
+async def list_prompts():
+    """Get pending human prompts."""
+    from db.human_oversight import human_prompt_store
+    prompts = await human_prompt_store.get_pending_prompts()
+    return prompts
+
+
+@router.post("/api/prompts")
+async def create_prompt(story_id: str, prompt_text: str):
+    """Submit a new human prompt."""
+    from db.human_oversight import human_prompt_store
+    from uuid import UUID
+    prompt_id = await human_prompt_store.create_prompt(
+        story_id=UUID(story_id),
+        prompt_text=prompt_text
+    )
+    return {"status": "success", "prompt_id": prompt_id}
+
+
+@router.get("/api/sources")
+async def list_sources(story_id: str = None):
+    """Get sources for a story or all recent sources."""
+    if story_id:
+        from db.human_oversight import source_store
+        from uuid import UUID
+        sources = await source_store.get_story_sources(UUID(story_id))
+        return sources
+    else:
+        rows = await db.fetch("SELECT * FROM story_sources ORDER BY created_at DESC LIMIT 50")
+        return [dict(row) for row in rows]
