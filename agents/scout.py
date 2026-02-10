@@ -152,8 +152,56 @@ class ScoutAgent(BaseAgent):
         except Exception as e:
             logger.error("Feed scan failed", feed_url=feed_url, error=str(e))
 
+    async def scan_bluesky(self) -> None:
+        """Scan Bluesky for newsworthy signals."""
+        from ingestion.bluesky_monitor import bluesky_monitor
+        if not bluesky_monitor:
+            return
+
+        logger.info("Scanning Bluesky for signals")
+        
+        # Search for broad news signals
+        signals = await bluesky_monitor.get_trending_signals(limit=10)
+        
+        for signal in signals:
+            # Reformat signal to look like a feed entry for calculate_newsworthiness
+            # This allows us to reuse the same scoring logic
+            entry = {
+                "title": signal["text"][:100],
+                "summary": signal["text"],
+                "link": signal["uri"],
+                "published": signal["created_at"]
+            }
+            
+            score = self.calculate_newsworthiness(entry)
+            
+            # Social media signals need a higher threshold or different scoring
+            if score < 0.7:  # Higher threshold for social
+                continue
+                
+            # Log as a detection
+            await self.log_event(
+                uuid4(),
+                "story.detected",
+                {
+                    "source": "bluesky",
+                    "title": entry["title"],
+                    "url": entry["link"],
+                    "summary": entry["summary"],
+                    "score": score,
+                    "author": signal["author"],
+                    "is_duplicate": False, # Simplified for social MVP
+                },
+            )
+            
+            logger.info(
+                "Bluesky signal detected",
+                author=signal["author"],
+                score=score,
+            )
+
     async def run(self) -> None:
-        """Override run to proactively scan feeds."""
+        """Override run to proactively scan feeds and social."""
         await self.register()
         self._running = True
         
@@ -164,8 +212,12 @@ class ScoutAgent(BaseAgent):
         )
         
         while self._running:
+            # Scan RSS feeds
             for feed_url in self.feeds:
                 await self.scan_feed(feed_url)
+            
+            # Scan Social (Bluesky)
+            await self.scan_bluesky()
             
             # Wait before next scan
             import asyncio

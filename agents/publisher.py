@@ -7,6 +7,7 @@ from db.articles import article_store
 from db.publications import publication_store
 from publishing.rss import rss_publisher
 from publishing.email import email_publisher
+from publishing.bluesky import bluesky_publisher
 from config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -79,6 +80,20 @@ class PublisherAgent(BaseAgent):
                         results[channel] = {
                             "success": False,
                             "error": "Email publisher not configured (missing SendGrid API key)"
+                        }
+
+                elif channel == "bluesky":
+                    if bluesky_publisher:
+                        result = await bluesky_publisher.publish(article)
+                        results[channel] = {
+                            "success": result.success,
+                            "publication_id": str(result.publication_id) if result.publication_id else None,
+                            "error": result.error,
+                        }
+                    else:
+                        results[channel] = {
+                            "success": False,
+                            "error": "Bluesky publisher not configured (missing handle or app password)"
                         }
                 
                 else:

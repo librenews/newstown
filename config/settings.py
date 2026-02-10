@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     email_from_address: str = "news@newstown.example.com"
     email_from_name: str = "News Town"
 
+    # Social Media Publishing (Phase 4)
+    bluesky_handle: str = ""  # Optional
+    bluesky_app_password: str = ""  # Optional
+
     # System
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
