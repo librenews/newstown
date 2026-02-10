@@ -410,3 +410,17 @@ CREATE INDEX IF NOT EXISTS idx_reviews_created ON article_reviews(created_at DES
 
 COMMENT ON TABLE article_reviews IS 'Record of editorial review passes and quality scores';
 
+-- ============================================================================
+-- AUTHENTICATION (Phase 4.2)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'viewer',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);

@@ -4,6 +4,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from typing import Dict, Any
 from datetime import datetime, timedelta
+from api.auth_routes import get_current_user
+from fastapi import Depends
 from db.connection import db
 
 router = APIRouter()
@@ -82,23 +84,23 @@ async def get_dashboard_stats() -> Dict[str, Any]:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, user: dict = Depends(get_current_user)):
     """Render main dashboard page."""
     stats = await get_dashboard_stats()
     return templates.TemplateResponse(
         "dashboard_v2.html",
-        {"request": request, **stats}
+        {"request": request, "user": user, **stats}
     )
 
 
 @router.get("/api/stats")
-async def live_stats():
+async def live_stats(user: dict = Depends(get_current_user)):
     """API endpoint for live stats."""
     return await get_dashboard_stats()
 
 
 @router.get("/api/stories")
-async def list_stories(limit: int = 50):
+async def list_stories(limit: int = 50, user: dict = Depends(get_current_user)):
     """Get active story pipelines."""
     rows = await db.fetch("""
         SELECT 
@@ -115,7 +117,7 @@ async def list_stories(limit: int = 50):
 
 
 @router.get("/api/prompts")
-async def list_prompts():
+async def list_prompts(user: dict = Depends(get_current_user)):
     """Get pending human prompts."""
     from db.human_oversight import human_prompt_store
     prompts = await human_prompt_store.get_pending_prompts()
@@ -123,7 +125,7 @@ async def list_prompts():
 
 
 @router.post("/api/prompts")
-async def create_prompt(story_id: str, prompt_text: str):
+async def create_prompt(story_id: str, prompt_text: str, user: dict = Depends(get_current_user)):
     """Submit a new human prompt."""
     from db.human_oversight import human_prompt_store
     from uuid import UUID
@@ -135,7 +137,7 @@ async def create_prompt(story_id: str, prompt_text: str):
 
 
 @router.get("/api/sources")
-async def list_sources(story_id: str = None):
+async def list_sources(story_id: str = None, user: dict = Depends(get_current_user)):
     """Get sources for a story or all recent sources."""
     if story_id:
         from db.human_oversight import source_store
@@ -143,5 +145,5 @@ async def list_sources(story_id: str = None):
         sources = await source_store.get_story_sources(UUID(story_id))
         return sources
     else:
-        rows = await db.fetch("SELECT * FROM story_sources ORDER BY created_at DESC LIMIT 50")
+        rows = await db.fetch("SELECT * FROM story_sources ORDER BY added_at DESC LIMIT 50")
         return [dict(row) for row in rows]

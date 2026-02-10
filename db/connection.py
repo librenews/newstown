@@ -16,6 +16,9 @@ class Database:
 
     async def connect(self) -> None:
         """Create connection pool."""
+        if self._pool is not None:
+            return
+            
         logger.info("Connecting to database", url=settings.database_url.split("@")[-1])
         self._pool = await asyncpg.create_pool(
             settings.database_url,
@@ -28,7 +31,13 @@ class Database:
     async def disconnect(self) -> None:
         """Close connection pool."""
         if self._pool:
+            # In test environment, we let conftest manage the pool
+            import os
+            if os.getenv("ENVIRONMENT") == "test" and os.getenv("FORCE_DISCONNECT") != "true":
+                return
+                
             await self._pool.close()
+            self._pool = None
             logger.info("Database disconnected")
 
     @asynccontextmanager

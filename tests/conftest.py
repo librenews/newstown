@@ -23,20 +23,27 @@ def event_loop():
 
 @pytest.fixture(scope="function")
 async def db():
-    """Provide a clean database for each test."""
+    """Provide a clean database for each test via truncation."""
     from db.connection import db as database
-    from db.migrate import reset_database
     
-    # Connect to test database
+    # Connect if not already (safely idempotent now)
     await database.connect()
     
-    # Reset to clean state
-    await reset_database()
+    # Fast cleanup
+    async with database.acquire() as conn:
+        await conn.execute("""
+            TRUNCATE 
+                users, human_prompts, story_sources, articles, 
+                publications, publishing_schedule, governance_rules, 
+                approval_requests, audit_log, article_reviews,
+                story_tasks, story_events
+            RESTART IDENTITY CASCADE
+        """)
     
     yield database
     
-    # Cleanup
-    await database.disconnect()
+    # We DON'T disconnect here in test mode to keep the pool alive for the next test
+    # unless FORCE_DISCONNECT is set.
 
 
 @pytest.fixture

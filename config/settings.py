@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # Agent Configuration
     max_concurrent_agents: int = 10
-    task_poll_interval_seconds: int = 5
+    task_poll_interval_seconds: int = 15
     agent_heartbeat_interval_seconds: int = 30
 
     # Story Detection

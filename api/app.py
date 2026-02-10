@@ -7,6 +7,8 @@ from publishing.scheduler import scheduler
 from api.publishing import router as publishing_router
 from api.governance import router as governance_router
 from api.dashboard import router as dashboard_router
+from api.auth_routes import router as auth_router
+from db.users import user_store
 from config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,6 +23,10 @@ async def lifespan(app: FastAPI):
     # Connect to database
     await db.connect()
     logger.info("Database connected")
+    
+    # Ensure admin user exists
+    await user_store.ensure_admin_exists()
+    logger.info("Admin user verified")
     
     # Start publishing scheduler
     await scheduler.start()
@@ -58,6 +64,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(publishing_router)
 app.include_router(governance_router)
 

@@ -505,6 +505,21 @@
                     `).join('');
         }
 
+        if (document.getElementById('sources').classList.contains('active')) {
+          const sourcesResp = await fetch('/dashboard/api/sources');
+          const sources = await sourcesResp.json();
+          document.getElementById('sources-table').innerHTML = sources.map(s => `
+                        <tr>
+                            <td><span class="badge badge-info">${s.source_type}</span></td>
+                            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                ${s.source_url ? `<a href="${s.source_url}" target="_blank" style="color: var(--primary); text-decoration: none;">${s.source_url}</a>` : (s.source_content || '').substring(0, 100) + '...'}
+                            </td>
+                            <td style="font-family: monospace;">${s.story_id.substring(0, 8)}</td>
+                            <td><span class="badge ${s.processed ? 'badge-success' : 'badge-warning'}">${s.processed ? 'Processed' : 'Pending'}</span></td>
+                        </tr>
+                    `).join('');
+        }
+
       } catch (err) {
         console.error("Refresh failed", err);
         document.getElementById('connection-status').className = 'badge badge-danger';
@@ -526,7 +541,7 @@
     }
 
     // Initialize
-    setInterval(refreshData, 5000);
+    setInterval(refreshData, 15000);
     refreshData();
   </script>
 </body>
