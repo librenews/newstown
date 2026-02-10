@@ -60,14 +60,23 @@ class EditorAgent(BaseAgent):
         # 2. Verify claims (Fact-checking)
         verification_results = await self._verify_claims(analysis.get("claims", []))
         
-        # 3. Calculate scores
+        # 3. Source Diversity Check
+        sources = task.input.get("research_data", {}).get("sources", [])
+        diversity_score = self._check_source_diversity(sources)
+
+        # 4. Calculate scores
         score, verification_score, style_score = self._calculate_score(
             analysis, verification_results
         )
         
-        # 4. Make decision
-        # Higher thresholds for Phase 4.1
-        decision = "APPROVE" if verification_score >= 0.9 and style_score >= 0.8 else "REJECT"
+        # Apply diversity penalty
+        if diversity_score < 0.5:
+            score = round(score * 0.8, 2)
+            analysis["style_issues"].append("Poor source diversity - story relies on too few domains.")
+
+        # 5. Make decision
+        # Higher thresholds for Phase 4.5 - diversity must be decent
+        decision = "APPROVE" if verification_score >= 0.9 and style_score >= 0.8 and diversity_score >= 0.5 else "REJECT"
         
         # 5. Compile feedback
         feedback = self._compile_feedback(
@@ -250,3 +259,22 @@ class EditorAgent(BaseAgent):
                 parts.append(f"- {claim}: {detail.get('reason')}")
                 
         return "\n".join(parts)
+
+    def _check_source_diversity(self, sources: list[dict]) -> float:
+        """Measure how many unique top-level domains provide context."""
+        if not sources:
+            return 0.0
+        
+        from urllib.parse import urlparse
+        domains = set()
+        for s in sources:
+            url = s.get("url")
+            if url:
+                netloc = urlparse(url).netloc
+                if netloc:
+                    domains.add(netloc)
+        
+        # 1 domain = 0.0, 2 domains = 0.5, 3+ domains = 1.0
+        if len(domains) <= 1: return 0.0
+        if len(domains) == 2: return 0.5
+        return 1.0
