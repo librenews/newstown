@@ -290,6 +290,7 @@
       <button class="tab-btn" onclick="showTab('stories')">Stories</button>
       <button class="tab-btn" onclick="showTab('prompts')">Human Prompts</button>
       <button class="tab-btn" onclick="showTab('sources')">Sources</button>
+      <button class="tab-btn" onclick="showTab('quality')">Quality Insights</button>
       <button class="tab-btn" onclick="showTab('agents')">Agents</button>
     </div>
 
@@ -301,8 +302,8 @@
           <div class="stat-value" id="stat-total-articles">0</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Discovery Score</div>
-          <div class="stat-value" id="stat-discovery-score">0</div>
+          <div class="stat-label">Avg Quality Score</div>
+          <div class="stat-value" id="stat-avg-quality">0.0</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Active Pipelines</div>
@@ -329,6 +330,43 @@
             <!-- Populated by JS -->
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- Quality Insights Tab -->
+    <section id="quality" class="content-section">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Rejection Rate</div>
+          <div class="stat-value" id="stat-rejection-rate">0%</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg Verification Score</div>
+          <div class="stat-value" id="stat-avg-verification">0.0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg Style Compliance</div>
+          <div class="stat-value" id="stat-avg-style">0.0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg Revisions / Story</div>
+          <div class="stat-value" id="stat-avg-revisions">0.0</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+        <div class="table-container p-4" style="padding: 1.5rem;">
+          <h3 style="margin-bottom: 1rem;">Quality Trends (7d)</h3>
+          <div id="quality-trends-chart" style="height: 200px; display: flex; align-items: flex-end; gap: 8px;">
+            <!-- CSS Bars will go here -->
+          </div>
+        </div>
+        <div class="table-container p-4" style="padding: 1.5rem;">
+          <h3 style="margin-bottom: 1rem;">Performance per Role</h3>
+          <div id="performance-list">
+            <!-- Populated by JS -->
+          </div>
+        </div>
       </div>
     </section>
 
@@ -454,20 +492,20 @@
         // Update stats
         document.getElementById('stat-total-articles').innerText = statsData.stats.total_articles;
         document.getElementById('stat-active-pipelines').innerText = statsData.stats.active_pipelines;
-        document.getElementById('stat-discovery-score').innerText = statsData.stats.total_stories;
+        document.getElementById('stat-avg-quality').innerText = statsData.stats.avg_quality_score;
 
-        // Update articles
+        // ... existing articles table update ...
         const articlesBody = document.getElementById('articles-table');
         articlesBody.innerHTML = statsData.recent_articles.map(a => `
                     <tr>
                         <td style="font-weight: 500;">${a.headline}</td>
                         <td>${a.byline || 'Unknown'}</td>
                         <td style="color: var(--text-muted)">${new Date(a.published_at).toLocaleString()}</td>
-                        <td><span class="badge badge-success">85</span></td>
+                        <td><span class="badge badge-success">${statsData.stats.avg_quality_score * 100}</span></td>
                     </tr>
                 `).join('');
 
-        // Update activity
+        // ... existing activity table update ...
         const activityBody = document.getElementById('agent-activity-table');
         activityBody.innerHTML = statsData.agent_activity.map(a => `
                     <tr>
@@ -478,6 +516,38 @@
                 `).join('');
 
         // Tab specific updates
+        if (document.getElementById('quality').classList.contains('active')) {
+          const qualResp = await fetch('/dashboard/api/quality');
+          const qualData = await qualResp.json();
+
+          document.getElementById('stat-rejection-rate').innerText = qualData.rejection_rate + '%';
+          document.getElementById('stat-avg-verification').innerText = statsData.stats.avg_verification;
+          document.getElementById('stat-avg-style').innerText = statsData.stats.avg_style;
+          document.getElementById('stat-avg-revisions').innerText = qualData.avg_revisions;
+
+          // Render Trends Chart (simple CSS bars)
+          const chart = document.getElementById('quality-trends-chart');
+          chart.innerHTML = qualData.trends.map(t => {
+            const h = (t.avg_score * 100) + '%';
+            return `<div style="flex: 1; background: var(--primary); height: ${h}; border-radius: 4px 4px 0 0; min-width: 20px; position: relative;" title="${new Date(t.day).toLocaleDateString()}: ${t.avg_score}"></div>`;
+          }).join('');
+
+          // Fetch performance
+          const perfResp = await fetch('/dashboard/api/performance');
+          const perfData = await perfResp.json();
+          document.getElementById('performance-list').innerHTML = perfData.map(p => `
+              <div style="margin-bottom: 1rem;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                      <span style="text-transform: capitalize;">${p.role}</span>
+                      <span style="color: var(--success);">${p.successes} Successes</span>
+                  </div>
+                  <div style="height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden;">
+                      <div style="height: 100%; background: var(--success); width: ${(p.successes / (p.successes + p.failures + 0.001) * 100)}%;"></div>
+                  </div>
+              </div>
+          `).join('');
+        }
+
         if (document.getElementById('stories').classList.contains('active')) {
           const storiesResp = await fetch('/dashboard/api/stories');
           const stories = await storiesResp.json();

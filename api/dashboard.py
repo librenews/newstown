@@ -65,6 +65,11 @@ async def get_dashboard_stats() -> Dict[str, Any]:
             LIMIT 50
             """
         )
+
+        # Quality stats overview
+        avg_score = await conn.fetchval("SELECT AVG(score) FROM article_reviews")
+        avg_v_score = await conn.fetchval("SELECT AVG(verification_score) FROM article_reviews")
+        avg_s_score = await conn.fetchval("SELECT AVG(style_score) FROM article_reviews")
     
     return {
         "stats": {
@@ -75,12 +80,78 @@ async def get_dashboard_stats() -> Dict[str, Any]:
             "total_publications": total_publications or 0,
             "rss_publications": rss_pubs or 0,
             "pending_approvals": pending_approvals or 0,
+            "avg_quality_score": round(avg_score or 0, 2),
+            "avg_verification": round(avg_v_score or 0, 2),
+            "avg_style": round(avg_s_score or 0, 2),
         },
         "recent_articles": [dict(row) for row in recent_articles] if recent_articles else [],
         "recent_activity": [dict(row) for row in recent_activity] if recent_activity else [],
         "agent_activity": [dict(row) for row in agent_activity] if agent_activity else [],
         "last_updated": datetime.now().isoformat(),
     }
+
+
+async def get_extended_quality_stats() -> Dict[str, Any]:
+    """Gather detailed newsroom quality analytics."""
+    async with db.acquire() as conn:
+        # Common violations (we store them in JSON metadata)
+        # We'll need to parse this if we want specific counts, 
+        # but for now let's get rejection rate
+        total_reviews = await conn.fetchval("SELECT COUNT(*) FROM article_reviews")
+        rejected_reviews = await conn.fetchval("SELECT COUNT(*) FROM article_reviews WHERE decision = 'REJECT'")
+        rejection_rate = (rejected_reviews / total_reviews * 100) if total_reviews > 0 else 0
+
+        # Revision throughput
+        # Average number of revisions for completed stories
+        avg_revisions = await conn.fetchval("""
+            SELECT AVG(rev_count) FROM (
+                SELECT story_id, COUNT(*) as rev_count 
+                FROM story_tasks 
+                WHERE stage = 'edit' 
+                GROUP BY story_id
+            ) sub
+        """)
+
+        # Quality trends (last 7 days)
+        trends = await conn.fetch("""
+            SELECT 
+                DATE_TRUNC('day', created_at) as day,
+                AVG(score) as avg_score,
+                COUNT(*) as volume
+            FROM article_reviews
+            WHERE created_at > NOW() - INTERVAL '7 days'
+            GROUP BY day
+            ORDER BY day ASC
+        """)
+
+    return {
+        "rejection_rate": round(rejection_rate, 1),
+        "total_reviews": total_reviews,
+        "avg_revisions": round(avg_revisions or 0, 1),
+        "trends": [dict(row) for row in trends]
+    }
+
+
+@router.get("/api/quality")
+async def quality_metrics(user: dict = Depends(get_current_user)):
+    """API endpoint for detailed quality analytics."""
+    return await get_extended_quality_stats()
+
+
+@router.get("/api/performance")
+async def performance_metrics(user: dict = Depends(get_current_user)):
+    """API endpoint for agent performance tracking."""
+    # Simplified performance metric: success vs failure in tasks
+    rows = await db.fetch("""
+        SELECT 
+            role,
+            COUNT(*) FILTER (WHERE status = 'completed') as successes,
+            COUNT(*) FILTER (WHERE status = 'failed') as failures
+        FROM agents a
+        JOIN story_tasks t ON t.assigned_agent = a.id
+        GROUP BY role
+    """)
+    return [dict(row) for row in rows]
 
 
 @router.get("/", response_class=HTMLResponse)
