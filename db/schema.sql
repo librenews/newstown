@@ -197,8 +197,8 @@ BEGIN
       AND st2.stage IN (
         SELECT UNNEST(CASE p_role
           WHEN 'scout' THEN ARRAY['detect']
-          WHEN 'reporter' THEN ARRAY['research', 'draft']
-          WHEN 'editor' THEN ARRAY['edit', 'review']
+          WHEN 'reporter' THEN ARRAY['research', 'draft', 'edit']
+          WHEN 'editor' THEN ARRAY['review']
           WHEN 'publisher' THEN ARRAY['publish']
           ELSE ARRAY[]::TEXT[]
         END)

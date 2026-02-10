@@ -234,7 +234,74 @@ class AuditLogStore:
         return [AuditLogEntry(**dict(row)) for row in rows]
 
 
+class ArticleReview(BaseModel):
+    """Result of an editorial review pass."""
+    id: UUID
+    story_id: UUID
+    article_id: Optional[UUID] = None
+    editor_agent_id: UUID
+    score: float
+    verification_score: Optional[float] = None
+    style_score: Optional[float] = None
+    feedback: Optional[str] = None
+    decision: str  # 'APPROVE', 'REJECT'
+    meta: Dict[str, Any] = {}
+    created_at: datetime
+
+
+class ArticleReviewStore:
+    """Store for persistent editorial quality data."""
+    
+    async def create(
+        self,
+        story_id: UUID,
+        editor_agent_id: UUID,
+        score: float,
+        decision: str,
+        article_id: Optional[UUID] = None,
+        verification_score: Optional[float] = None,
+        style_score: Optional[float] = None,
+        feedback: Optional[str] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> UUID:
+        """Record an article review pass."""
+        import json
+        
+        query = """
+            INSERT INTO article_reviews (
+                story_id, article_id, editor_agent_id, score, 
+                verification_score, style_score, feedback, decision, meta
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id
+        """
+        result = await db.fetchrow(
+            query,
+            story_id,
+            article_id,
+            editor_agent_id,
+            score,
+            verification_score,
+            style_score,
+            feedback,
+            decision,
+            json.dumps(meta or {}),
+        )
+        return result["id"]
+    
+    async def get_for_story(self, story_id: UUID) -> List[ArticleReview]:
+        """Get all review passes for a story."""
+        query = """
+            SELECT * FROM article_reviews
+            WHERE story_id = $1
+            ORDER BY created_at DESC
+        """
+        rows = await db.fetch(query, story_id)
+        return [ArticleReview(**dict(row)) for row in rows]
+
+
 # Global instances
 governance_rule_store = GovernanceRuleStore()
 approval_request_store = ApprovalRequestStore()
 audit_log_store = AuditLogStore()
+article_review_store = ArticleReviewStore()

@@ -40,38 +40,62 @@ class EditorAgent(BaseAgent):
     # ... (review_article method) ...
 
     async def review_article(self, task: Task) -> dict[str, Any]:
-        """Review an article draft."""
+        """Review an article draft with advanced AP style check and persistence."""
+        from db.governance import article_review_store
+        
         draft = task.input.get("draft", {})
         article_text = draft.get("article", "")
         headline = draft.get("headline", "")
+        article_id = task.input.get("article_id") # Usually None for drafts
         
         logger.info(
-            "Reviewing article",
+            "Advanced Review started",
             story_id=str(task.story_id),
             headline=headline,
         )
 
-        # 1. Analyze text and extract claims
+        # 1. Analyze text (Tone, Style, AP Standards)
         analysis = await self._analyze_text(article_text)
         
-        # 2. Verify claims
+        # 2. Verify claims (Fact-checking)
         verification_results = await self._verify_claims(analysis.get("claims", []))
         
-        # 3. Calculate score
+        # 3. Calculate scores
         score, verification_score, style_score = self._calculate_score(
             analysis, verification_results
         )
         
         # 4. Make decision
-        decision = "APPROVE" if verification_score >= 0.8 and style_score >= 0.7 else "REJECT"
+        # Higher thresholds for Phase 4.1
+        decision = "APPROVE" if verification_score >= 0.9 and style_score >= 0.8 else "REJECT"
         
         # 5. Compile feedback
         feedback = self._compile_feedback(
             analysis, verification_results, score, decision
         )
         
+        # 6. PERSIST to article_reviews
+        try:
+            await article_review_store.create(
+                story_id=task.story_id,
+                editor_agent_id=self.agent_id,
+                score=score,
+                decision=decision,
+                article_id=UUID(article_id) if article_id else None,
+                verification_score=verification_score,
+                style_score=style_score,
+                feedback=feedback,
+                meta={
+                    "tone": analysis.get("tone"),
+                    "claims_count": len(analysis.get("claims", [])),
+                    "ap_style_violations": len(analysis.get("ap_violations", []))
+                }
+            )
+        except Exception as e:
+            logger.error("Failed to persist review", error=str(e))
+
         logger.info(
-            "Review completed",
+            "Review completed and persisted",
             decision=decision,
             score=score,
             story_id=str(task.story_id)
@@ -87,55 +111,58 @@ class EditorAgent(BaseAgent):
             "analysis": analysis,
         }
 
-
     async def _analyze_text(self, text: str) -> dict[str, Any]:
-        """Analyze text for claims, tone, and style."""
-        prompt = f"""Analyze the following news article draft.
+        """Analyze text for claims, tone, and strict AP Style standards."""
+        prompt = f"""Analyze the following news article draft for quality and AP Style adherence.
         
         Article:
         {text}
         
-        Extract:
-        1. List of factual claims made (max 10 key claims).
-        2. Assessment of tone (Objective, Biased, Sensationalist, Dry).
-        3. Assessment of style (conciseness, clarity, active voice).
-        4. List of any grammatical or structural issues.
+        Instructions:
+        1. Extract max 10 key factual claims for verification.
+        2. Assess tone (Objective, Biased, Sensationalist, Dry).
+        3. Check for AP Style violations (e.g., date formats, title capitalization, number usage, Oxford commas - AP doesn't use them).
+        4. Identify grammatical or structural issues.
+        5. Provide a style score (0.0 to 1.0) based on overall quality and AP adherence.
         
         Return JSON format:
         {{
             "claims": ["claim 1", "claim 2"],
             "tone": "Objective",
+            "ap_violations": ["violation 1", "violation 2"],
             "style_issues": ["issue 1"],
             "grammar_issues": ["issue 1"],
-            "score": 0.0-1.0 (style score)
+            "score": 0.85
         }}
         """
         
         try:
             content = await self.chat_service.generate(
-                system="You are an editor analyzing a news article.",
+                system="You are a professional news editor enforcing strict AP Style guidelines.",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1000,
             )
-            # Extract JSON from response (handle potential preamble)
+            # Extract JSON from response
             start = content.find("{")
             end = content.rfind("}") + 1
             if start != -1 and end != -1:
                 json_str = content[start:end]
                 return json.loads(json_str)
-            return {"claims": [], "tone": "Unknown", "score": 0.5}
+            return {"claims": [], "tone": "Unknown", "score": 0.5, "ap_violations": []}
         except Exception as e:
             logger.error("Text analysis failed", error=str(e))
-            return {"claims": [], "tone": "Unknown", "score": 0.5}
-
-    # ... (_verify_claims method) ...
+            return {"claims": [], "tone": "Unknown", "score": 0.5, "ap_violations": []}
 
     async def _verify_claims(self, claims: List[str]) -> dict[str, Any]:
         """Verify claims using search."""
         results = {}
         verified_count = 0
         
-        for claim in claims[:5]:  # Limit to 5 verifications
+        # Phase 4.1: Multi-pass check - verify more claims for deeper reliability
+        limit = 7 
+        claims_to_check = claims[:limit]
+        
+        for claim in claims_to_check:
             try:
                 search_results = await self.search_provider.search(claim, max_results=3)
                 context = "\n".join([r.snippet for r in search_results])
@@ -150,11 +177,10 @@ class EditorAgent(BaseAgent):
                 results[claim] = {"supported": False, "reason": "Verification failed"}
         
         return {
-            "claims_checked": len(claims[:5]),
+            "claims_checked": len(claims_to_check),
             "verified_count": verified_count,
             "details": results
         }
-
 
     async def _check_claim_support(self, claim: str, context: str) -> dict[str, Any]:
         """Check if context supports the claim."""
@@ -163,16 +189,15 @@ class EditorAgent(BaseAgent):
         Context:
         {context}
         
-        Does the context support the claim?
+        Does the context support the claim? Be strict.
         Return JSON: {{ "supported": true/false, "reason": "..." }}
         """
          
         try:
             content = await self.chat_service.generate(
-                system="You are a fact-checker verifying a claim against context.",
+                system="You are an expert fact-checker. Be pedantic and thorough.",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=200,
-                model="claude-3-haiku-20240307",  # Preferred if using Anthropic
             )
             start = content.find("{")
             end = content.rfind("}") + 1
@@ -184,7 +209,11 @@ class EditorAgent(BaseAgent):
 
     def _calculate_score(self, analysis: dict, verification: dict) -> tuple[float, float, float]:
         """Calculate overall quality score."""
-        style_score = analysis.get("score", 0.5)
+        style_base_score = analysis.get("score", 0.5)
+        ap_violations_count = len(analysis.get("ap_violations", []))
+        
+        # Penalty for AP style violations
+        style_score = max(0, style_base_score - (ap_violations_count * 0.05))
         
         claims_checked = verification.get("claims_checked", 0)
         verified = verification.get("verified_count", 0)
@@ -193,8 +222,8 @@ class EditorAgent(BaseAgent):
         if claims_checked > 0:
             verification_score = verified / claims_checked
             
-        # Weighted score: 60% verification, 40% style
-        total_score = (verification_score * 0.6) + (style_score * 0.4)
+        # Weighted score: 70% verification, 30% style for advanced editor
+        total_score = (verification_score * 0.7) + (style_score * 0.3)
         
         return round(total_score, 2), verification_score, style_score
 
@@ -204,16 +233,20 @@ class EditorAgent(BaseAgent):
         """Create human-readable feedback."""
         parts = [
             f"Decision: {decision} (Score: {score}/1.0)",
-            f"Style Score: {analysis.get('score', 0)}",
+            f"Style/AP Score: {analysis.get('score', 0)}",
             f"Fact Check: {verification.get('verified_count', 0)}/{verification.get('claims_checked', 0)} verified",
             "",
-            "Style Issues:",
+            "AP Style Violations:",
         ]
-        parts.extend([f"- {i}" for i in analysis.get("style_issues", [])])
+        parts.extend([f"- {i}" for i in analysis.get("ap_violations", [])])
         
-        parts.append("\\nUnverified Claims:")
+        parts.append("\nStyle/Grammar Issues:")
+        parts.extend([f"- {i}" for i in analysis.get("style_issues", [])])
+        parts.extend([f"- {i}" for i in analysis.get("grammar_issues", [])])
+        
+        parts.append("\nUnverified Claims:")
         for claim, detail in verification.get("details", {}).items():
             if not detail.get("supported"):
                 parts.append(f"- {claim}: {detail.get('reason')}")
                 
-        return "\\n".join(parts)
+        return "\n".join(parts)

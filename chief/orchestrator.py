@@ -261,31 +261,18 @@ class Chief(BaseAgent):
             decision = output.get("decision")
             
             if decision == "APPROVE":
+                # ... existing approval logic ...
                 # Check if publish task already exists
                 publish_exists = await db.fetchval(
                     "SELECT 1 FROM story_tasks WHERE story_id = $1 AND stage = 'publish'",
                     story_id
                 )
                 if not publish_exists:
-                    # Create the article in the database
                     draft = task_input.get("draft", {})
-                    # For a draft, the content is in 'article' key usually?
-                    # Reporter.draft returns {"article": "...", "headline": "...", ...}
-                    # But wait, Editor.review_article expects {"draft": {"article": ...}}
-                    # Yes, assign_draft_to_review puts the whole draft output into "draft" key.
-                    # So draft = {"article": ..., "headline": ...} happens above.
-                    
                     if not draft:
                         logger.error("Approved review missing draft content", task_id=str(task_id))
                         continue
 
-                    # Create article
-                    # Note: We don't have all metadata here easily (entities, sources are in research task)
-                    # But they might be in draft output if Reporter put them there?
-                    # Reporter.draft returns limited fields.
-                    # Ideally Reporter should pass through sources/entities.
-                    # But for now, we'll create with what we have.
-                    
                     article_body = draft.get("article", "")
                     headline = draft.get("headline", "Untitled")
                     
@@ -294,20 +281,17 @@ class Chief(BaseAgent):
                             story_id=story_id,
                             headline=headline,
                             body=article_body,
-                            summary=None, # summary could be generated?
+                            summary=None,
                             byline="News Town Reporter",
-                            # We lost sources/entities in this simplified flow...
-                            # TODO: Phase 4.x - Pass metadata through
                         )
                         
-                        # Create publish task
                         await task_queue.create(
                             story_id=story_id,
                             stage=TaskStage.PUBLISH,
                             priority=8,
                             input_data={
                                 "article_id": str(article_id),
-                                "channels": ["rss"] # Default to RSS
+                                "channels": ["rss"]
                             }
                         )
                         logger.info("Publish task created", story_id=str(story_id))
@@ -317,14 +301,33 @@ class Chief(BaseAgent):
                         logger.error("Failed to create article for publishing", error=str(e))
             
             elif decision == "REJECT":
-                 # Check if the latest task is this review
+                 # Check how many revisions we've already done
+                 revision_count = await db.fetchval("""
+                     SELECT COUNT(*) FROM story_tasks 
+                     WHERE story_id = $1 AND stage = 'edit'
+                 """, story_id)
+                 
+                 if revision_count >= 3:
+                     logger.warning(
+                         "Max revisions reached, killing story pipeline",
+                         story_id=str(story_id),
+                         revisions=revision_count
+                     )
+                     await self.log_event(
+                         story_id,
+                         "story.killed",
+                         {"reason": "too_many_revisions", "last_feedback": output.get("feedback")}
+                     )
+                     continue
+
+                 # Create revision task (EDIT stage)
+                 # Reporter role will pick this up due to schema update
                  latest_task = await db.fetchrow(
                      "SELECT * FROM story_tasks WHERE story_id = $1 ORDER BY created_at DESC LIMIT 1",
                      story_id
                  )
                  
                  if latest_task and latest_task["id"] == task_id:
-                     # This review is the latest thing. We need to create revision task.
                      draft_content = task_input.get("draft", {})
                      
                      await task_queue.create(
@@ -334,9 +337,14 @@ class Chief(BaseAgent):
                         input_data={
                             "draft": draft_content,
                             "feedback": output.get("feedback", "No feedback provided."),
+                            "revision_number": revision_count + 1
                         }
                      )
-                     logger.info("Revision (Edit) task created", story_id=str(story_id))
+                     logger.info(
+                         "Revision task created", 
+                         story_id=str(story_id), 
+                         rev_num=revision_count + 1
+                     )
                      count += 1
                      
         return count
